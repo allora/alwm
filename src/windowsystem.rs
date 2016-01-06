@@ -8,8 +8,8 @@ use std::ptr::{
 };
 
 use x11::xlib;
-use keys;
-use keys::Key;
+use config;
+use config::KeyCmd;
 
 pub struct WindowSystem {
     display:    *mut xlib::Display,
@@ -76,16 +76,16 @@ impl WindowSystem {
 
             // Grab keys
             // Exit key behavior
-            let kc_exit = xlib::XKeysymToKeycode( self.display, Key::get_keysym( keys::EXIT_KEY ) );
-            xlib::XGrabKey( self.display, kc_exit as i32, Key::get_modifier( keys::EXIT_KEY ),
+            let kc_exit = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::EXIT_KEY ) );
+            xlib::XGrabKey( self.display, kc_exit as i32, KeyCmd::get_modifier( config::EXIT_KEY ),
                 self.root as c_ulong, 1, xlib::GrabModeAsync, xlib::GrabModeAsync );
 
             // Grab mouse
-            xlib::XGrabButton( self.display, keys::MOUSE_MOVE.button, keys::MOUSE_MOVE.modifier,
+            xlib::XGrabButton( self.display, config::MOUSE_MOVE.button, config::MOUSE_MOVE.modifier,
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
-            xlib::XGrabButton( self.display, keys::MOUSE_RESIZE.button, keys::MOUSE_RESIZE.modifier,
+            xlib::XGrabButton( self.display, config::MOUSE_RESIZE.button, config::MOUSE_RESIZE.modifier,
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
-            xlib::XGrabButton( self.display, keys::MOUSE_RAISE.button, keys::MOUSE_RAISE.modifier,
+            xlib::XGrabButton( self.display, config::MOUSE_RAISE.button, config::MOUSE_RAISE.modifier,
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
 
             // Set up window events
@@ -239,12 +239,12 @@ impl WindowSystem {
     }
 
     unsafe fn on_keypress( &mut self, event: &xlib::XKeyEvent ) -> bool {
-        use keys::*;
+        use config::*;
         let key = xlib::XKeysymToString(
             xlib::XKeycodeToKeysym( self.display, event.keycode as u8, 0 ) );
         let key = CString::from_raw(key);
 
-        let key_info = Key::new( key.to_str().unwrap(), event.state );
+        let key_info = KeyCmd::new( key.to_str().unwrap(), event.state );
 
         // Handle key events
         match key_info {
@@ -278,10 +278,10 @@ impl WindowSystem {
     }
 
     unsafe fn on_button_press( &mut self, event: &xlib::XButtonEvent ) {
-        let button_info = keys::MouseCmd::new( event.button, event.state );
+        let button_info = config::MouseCmd::new( event.button, event.state );
 
         match button_info {
-            keys::MOUSE_RESIZE => {
+            config::MOUSE_RESIZE => {
                 if event.subwindow != 0 {
                     println!("Resize");
                     xlib::XRaiseWindow( self.display, event.subwindow );
@@ -289,7 +289,7 @@ impl WindowSystem {
                 }
             },
 
-            keys::MOUSE_MOVE => {
+            config::MOUSE_MOVE => {
                 if event.subwindow != 0 {
                     println!("Move");
                     xlib::XRaiseWindow( self.display, event.subwindow );
@@ -297,7 +297,7 @@ impl WindowSystem {
                 }
             },
 
-            keys::MOUSE_RAISE => {
+            config::MOUSE_RAISE => {
                 if event.subwindow != 0 {
                     xlib::XRaiseWindow( self.display, event.subwindow );
                 }

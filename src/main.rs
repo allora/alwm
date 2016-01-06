@@ -1,7 +1,7 @@
 extern crate libc;
 extern crate x11;
 
-pub mod keys;
+pub mod config;
 pub mod windowsystem;
 
 use windowsystem::WindowSystem;
