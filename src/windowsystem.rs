@@ -1,3 +1,5 @@
+use std::thread::spawn;
+use std::process::Command;
 use std::num::Wrapping;
 use std::cmp::max;
 use libc::c_ulong;
@@ -78,6 +80,12 @@ impl WindowSystem {
             // Exit key behavior
             let kc_exit = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::EXIT_KEY ) );
             xlib::XGrabKey( self.display, kc_exit as i32, KeyCmd::get_modifier( config::EXIT_KEY ),
+                self.root as c_ulong, 1, xlib::GrabModeAsync, xlib::GrabModeAsync );
+            let kc_term = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::TERM_KEY ) );
+            xlib::XGrabKey( self.display, kc_term as i32, KeyCmd::get_modifier( config::TERM_KEY ),
+                self.root as c_ulong, 1, xlib::GrabModeAsync, xlib::GrabModeAsync );
+            let kc_run = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::RUN_KEY ) );
+            xlib::XGrabKey( self.display, kc_run as i32, KeyCmd::get_modifier( config::RUN_KEY ),
                 self.root as c_ulong, 1, xlib::GrabModeAsync, xlib::GrabModeAsync );
 
             // Grab mouse
@@ -199,6 +207,9 @@ impl WindowSystem {
     fn on_keypress( &mut self, event: &xlib::XKeyEvent ) -> bool {
         use config::*;
 
+        let mut open_term = false;
+        let mut open_run = false;
+
         unsafe {
             let key = xlib::XKeysymToString(
                 xlib::XKeycodeToKeysym( self.display, event.keycode as u8, 0 ) );
@@ -212,10 +223,32 @@ impl WindowSystem {
                     println!( "Exiting!" );
                     return true;
                 },
+                TERM_KEY => {
+                    open_term = true;
+                },
+                RUN_KEY => {
+                    println!("Run key pushed");
+                    open_run = true;
+                },
 
                 _ => {},
             }
         }
+
+        if open_run {
+            spawn(move || {
+                Command::new( RUN ).spawn().unwrap_or_else( |e| {
+                    panic!("Invalid run command {}", e)});
+            });
+        }
+
+        if open_term {
+            spawn(move || {
+                Command::new( TERMINAL ).spawn().unwrap_or_else( |e| {
+                    panic!("Inavlid terminal command {}", e)});
+            });
+        }
+
         false
     }
 

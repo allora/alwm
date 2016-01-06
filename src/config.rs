@@ -9,6 +9,11 @@ pub const SHIFT: u32 = xlib::ShiftMask;
 
 // Key combos. We add our bindings here for wm actions
 pub const EXIT_KEY: KeyCmd<'static> = KeyCmd{ key: "F1", modifier: MODKEY2|SHIFT };
+pub const TERM_KEY: KeyCmd<'static> = KeyCmd{ key: "t", modifier: MODKEY2|SHIFT };
+pub const RUN_KEY: KeyCmd<'static> = KeyCmd{ key: "r", modifier: MODKEY2 };
+
+pub const RUN: &'static str = "dmenu_run";
+pub const TERMINAL: &'static str = "termite";
 
 // Mouse commands. We add our binds here for wm actions
 pub const MOUSE_MOVE: MouseCmd = MouseCmd{ button: 1, modifier: MODKEY2 };

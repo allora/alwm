@@ -10,9 +10,10 @@ Current Features:
 * Window Focus
 * Window Movement
 * Window Resize
+* Launch external term defined by user
+* Launch external run command (default to dmenu_run)
 
 Work In Progress:
 * Add debugging helpers
 * Window decoration configurable through config.rs (similar to config.h in dwm)
-* Launch external term defined by user
 * Code clean up (SO MANY UNSAFE D:)
