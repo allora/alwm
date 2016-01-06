@@ -1,0 +1,11 @@
+[package]
+name = "alwm"
+version = "0.1.0"
+authors = ["Allie <alliekat251@gmail.com>"]
+
+[dependencies]
+libc = "*"
+x11 = {version = "*", features = [ "xlib", "xinerama" ] }
+
+[[bin]]
+name = "alwm"
