@@ -108,31 +108,23 @@ impl WindowSystem {
                 }
 
                 let event = xlib::XMotionEvent::from(ev);
-                unsafe {
-                    self.on_motion( &event );
-                }
+                self.on_motion( &event );
             },
 
             xlib::ButtonPress => {
                 let event = xlib::XButtonEvent::from(ev);
                 println!("Button Pressed: {}", event.button);
-                unsafe {
-                    self.on_button_press( &event );
-                }
+                self.on_button_press( &event );
             },
 
             xlib::ButtonRelease => {
                 let event = xlib::XButtonEvent::from(ev);
-                unsafe {
-                    self.on_button_release( &event );
-                }
+                self.on_button_release( &event );
             },
 
             xlib::ClientMessage => {
                 let event = xlib::XClientMessageEvent::from(ev);
-                unsafe {
-                    self.on_client_message( &event );
-                }
+                self.on_client_message( &event );
             },
 
             xlib::DestroyNotify => {
@@ -141,9 +133,7 @@ impl WindowSystem {
 
             xlib::MapRequest => {
                 let mut event = xlib::XMapRequestEvent::from(ev);
-                unsafe {
-                    self.on_map_request( &mut event );
-                }
+                self.on_map_request( &mut event );
             },
 
 //            xlib::CreateNotify => {
@@ -151,11 +141,9 @@ impl WindowSystem {
 //            }
 
             xlib::KeyPress => {
-                unsafe {
-                    let event = xlib::XKeyEvent::from(ev);
-                    if self.on_keypress( &event ) {
-                        return true;
-                    }
+                let event = xlib::XKeyEvent::from(ev);
+                if self.on_keypress( &event ) {
+                    return true;
                 }
             },
 
@@ -170,96 +158,68 @@ impl WindowSystem {
         }
     }
 
-    unsafe fn on_client_message( &mut self, event: &xlib::XClientMessageEvent ) {
+    fn on_client_message( &mut self, event: &xlib::XClientMessageEvent ) {
         println!("Client message: {}", event.window);
-//        let data: [i32; 5] = [
-//            event.data.get_long(0) as i32,
-//            event.data.get_long(1) as i32,
-//            event.data.get_long(2) as i32,
-//            event.data.get_long(3) as i32,
-//            event.data.get_long(4) as i32, ];
     }
 
-    unsafe fn on_map_request( &mut self, event: &mut xlib::XMapRequestEvent ) {
-        let screen = xlib::XDefaultScreenOfDisplay( self.display );
-        let visual = xlib::XDefaultVisual( self.display, xlib::XDefaultScreen( self.display) );
-        let mut wa = xlib::XWindowAttributes {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-            border_width: 0,
-            depth: 0,
-            visual: visual,
-            root: 0,
-            class: 0,
-            bit_gravity: 0,
-            win_gravity: 0,
-            backing_store: 0,
-            backing_planes: 0,
-            backing_pixel: 0,
-            save_under: 0,
-            colormap: 0,
-            map_installed: 0,
-            map_state: 0,
-            all_event_masks: 0,
-            your_event_mask: 0,
-            do_not_propagate_mask: 0,
-            override_redirect: 0,
-            screen: screen,
-        };
+    fn on_map_request( &mut self, event: &mut xlib::XMapRequestEvent ) {
+        unsafe {
+            let mut wa = self.get_empty_wa();
 
-        if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
-            return;
+            if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
+                return;
+            }
+
+            if wa.override_redirect == 1 {
+                return;
+            }
+
+            let mut wc = xlib::XWindowChanges {
+                x: wa.x,
+                y: wa.y,
+                width: wa.width,
+                height: wa.height,
+                border_width: 10,
+                sibling: 0,
+                stack_mode: 0,
+            };
+
+            xlib::XConfigureWindow( self.display, event.window, xlib::CWBorderWidth as u32, &mut wc );
+            xlib::XSetWindowBorder( self.display, event.window, wc.border_width as u64 );
+            xlib::XMoveResizeWindow( self.display, event.window, wc.x, wc.y, wc.width as u32, wc.height as u32 );
+            xlib::XSelectInput( self.display, event.window,
+                        xlib::EnterWindowMask|
+                        xlib::FocusChangeMask|
+                        xlib::PropertyChangeMask|
+                        xlib::StructureNotifyMask );
+            xlib::XMapWindow( self.display, event.window );
         }
-
-        if wa.override_redirect == 1 {
-            return;
-        }
-
-        let mut wc = xlib::XWindowChanges {
-            x: wa.x,
-            y: wa.y,
-            width: wa.width,
-            height: wa.height,
-            border_width: 10,
-            sibling: 0,
-            stack_mode: 0,
-        };
-
-        xlib::XConfigureWindow( self.display, event.window, xlib::CWBorderWidth as u32, &mut wc );
-        xlib::XSetWindowBorder( self.display, event.window, wc.border_width as u64 );
-        xlib::XMoveResizeWindow( self.display, event.window, wc.x, wc.y, wc.width as u32, wc.height as u32 );
-        xlib::XSelectInput( self.display, event.window,
-                    xlib::EnterWindowMask|
-                    xlib::FocusChangeMask|
-                    xlib::PropertyChangeMask|
-                    xlib::StructureNotifyMask );
-        xlib::XMapWindow( self.display, event.window );
     }
 
-    unsafe fn on_keypress( &mut self, event: &xlib::XKeyEvent ) -> bool {
+    fn on_keypress( &mut self, event: &xlib::XKeyEvent ) -> bool {
         use config::*;
-        let key = xlib::XKeysymToString(
-            xlib::XKeycodeToKeysym( self.display, event.keycode as u8, 0 ) );
-        let key = CString::from_raw(key);
 
-        let key_info = KeyCmd::new( key.to_str().unwrap(), event.state );
+        unsafe {
+            let key = xlib::XKeysymToString(
+                xlib::XKeycodeToKeysym( self.display, event.keycode as u8, 0 ) );
+            let key = CString::from_raw(key);
 
-        // Handle key events
-        match key_info {
-            EXIT_KEY => {
-                println!( "Exiting!" );
-                return true;
-            },
+            let key_info = KeyCmd::new( key.to_str().unwrap(), event.state );
 
-            _ => {},
+            // Handle key events
+            match key_info {
+                EXIT_KEY => {
+                    println!( "Exiting!" );
+                    return true;
+                },
+
+                _ => {},
+            }
         }
-
         false
     }
 
-    unsafe fn on_resize_move( &mut self, event: &xlib::XButtonEvent ) {
+    fn on_resize_move( &mut self, event: &xlib::XButtonEvent ) {
         if event.button == 1 {
             self.x = event.x_root;
             self.y = event.y_root;
@@ -271,20 +231,24 @@ impl WindowSystem {
 
         self.button_id = event.button;
         println!("Pointer grabbed");
-        xlib::XGrabPointer( self.display, event.subwindow, 1,
-            (xlib::PointerMotionMask|xlib::ButtonReleaseMask) as u32,
-            xlib::GrabModeAsync, xlib::GrabModeAsync,
-            0, 0, event.time);
+        unsafe {
+            xlib::XGrabPointer( self.display, event.subwindow, 1,
+                (xlib::PointerMotionMask|xlib::ButtonReleaseMask) as u32,
+                xlib::GrabModeAsync, xlib::GrabModeAsync,
+                0, 0, event.time);
+        }
     }
 
-    unsafe fn on_button_press( &mut self, event: &xlib::XButtonEvent ) {
+    fn on_button_press( &mut self, event: &xlib::XButtonEvent ) {
         let button_info = config::MouseCmd::new( event.button, event.state );
 
         match button_info {
             config::MOUSE_RESIZE => {
                 if event.subwindow != 0 {
                     println!("Resize");
-                    xlib::XRaiseWindow( self.display, event.subwindow );
+                    unsafe {
+                        xlib::XRaiseWindow( self.display, event.subwindow );
+                    }
                     self.on_resize_move( &event );
                 }
             },
@@ -292,14 +256,18 @@ impl WindowSystem {
             config::MOUSE_MOVE => {
                 if event.subwindow != 0 {
                     println!("Move");
-                    xlib::XRaiseWindow( self.display, event.subwindow );
+                    unsafe {
+                        xlib::XRaiseWindow( self.display, event.subwindow );
+                    }
                     self.on_resize_move( &event );
                 }
             },
 
             config::MOUSE_RAISE => {
                 if event.subwindow != 0 {
-                    xlib::XRaiseWindow( self.display, event.subwindow );
+                    unsafe {
+                        xlib::XRaiseWindow( self.display, event.subwindow );
+                    }
                 }
             },
 
@@ -309,12 +277,14 @@ impl WindowSystem {
         println!("End button press function");
     }
 
-    unsafe fn on_button_release( &mut self, event: &xlib::XButtonEvent ) {
+    fn on_button_release( &mut self, event: &xlib::XButtonEvent ) {
         println!("Ungrab pointer");
-        xlib::XUngrabPointer( self.display, event.time );
+        unsafe {
+            xlib::XUngrabPointer( self.display, event.time );
+        }
     }
 
-    unsafe fn on_motion( &mut self, event: &xlib::XMotionEvent ) {
+    fn on_motion( &mut self, event: &xlib::XMotionEvent ) {
         if self.button_id == 1 {
             self.on_move( &event );
         }
@@ -325,46 +295,50 @@ impl WindowSystem {
         self.flush();
     }
 
-    unsafe fn on_resize( &mut self, event: &xlib::XMotionEvent ) {
-        let mut wa = self.get_empty_wa();
-        if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
-            return;
+    fn on_resize( &mut self, event: &xlib::XMotionEvent ) {
+        unsafe {
+            let mut wa = self.get_empty_wa();
+            if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
+                return;
+            }
+
+            let xdiff = Wrapping::<u32>( event.x_root as u32 ) - Wrapping::<u32>( self.w );
+            let ydiff = Wrapping::<u32>( event.y_root as u32 ) - Wrapping::<u32>( self.h );
+
+            self.w = event.x_root as u32;
+            self.h = event.y_root as u32;
+
+            let new_w = Wrapping::<u32>(wa.width as u32) + xdiff;
+            let new_h = Wrapping::<u32>(wa.height as u32) + ydiff;
+
+            let new_w = max(1, new_w.0);
+            let new_h = max(1, new_h.0);
+
+            println!("Coord Diffs: {}, {}", xdiff.0, ydiff.0);
+            println!("Coords: {}, {}", new_w, new_h );
+            xlib::XResizeWindow( self.display, event.window, new_w, new_h );
         }
-
-        let xdiff = Wrapping::<u32>( event.x_root as u32 ) - Wrapping::<u32>( self.w );
-        let ydiff = Wrapping::<u32>( event.y_root as u32 ) - Wrapping::<u32>( self.h );
-
-        self.w = event.x_root as u32;
-        self.h = event.y_root as u32;
-
-        let new_w = Wrapping::<u32>(wa.width as u32) + xdiff;
-        let new_h = Wrapping::<u32>(wa.height as u32) + ydiff;
-
-        let new_w = max(1, new_w.0);
-        let new_h = max(1, new_h.0);
-
-        println!("Coord Diffs: {}, {}", xdiff.0, ydiff.0);
-        println!("Coords: {}, {}", new_w, new_h );
-        xlib::XResizeWindow( self.display, event.window, new_w, new_h );
     }
 
-    unsafe fn on_move( &mut self, event: &xlib::XMotionEvent ) {
-        let mut wa = self.get_empty_wa();
-        if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
-            return;
+    fn on_move( &mut self, event: &xlib::XMotionEvent ) {
+        unsafe {
+            let mut wa = self.get_empty_wa();
+            if xlib::XGetWindowAttributes( self.display, event.window, &mut wa ) == 0 {
+                return;
+            }
+
+            let xdiff = event.x_root - self.x;
+            let ydiff = event.y_root - self.y;
+
+            self.x = event.x_root;
+            self.y = event.y_root;
+
+            let new_x = wa.x + xdiff;
+            let new_y = wa.y + ydiff;
+
+            println!("Coords: {}, {}", new_x, new_y );
+            xlib::XMoveWindow( self.display, event.window, new_x, new_y );
         }
-
-        let xdiff = event.x_root - self.x;
-        let ydiff = event.y_root - self.y;
-
-        self.x = event.x_root;
-        self.y = event.y_root;
-
-        let new_x = wa.x + xdiff;
-        let new_y = wa.y + ydiff;
-
-        println!("Coords: {}, {}", new_x, new_y );
-        xlib::XMoveWindow( self.display, event.window, new_x, new_y );
     }
 
     unsafe fn get_empty_wa ( &self ) -> xlib::XWindowAttributes {
