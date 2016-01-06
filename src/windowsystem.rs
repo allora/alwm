@@ -171,6 +171,7 @@ impl WindowSystem {
     }
 
     unsafe fn on_client_message( &mut self, event: &xlib::XClientMessageEvent ) {
+        println!("Client message: {}", event.window);
 //        let data: [i32; 5] = [
 //            event.data.get_long(0) as i32,
 //            event.data.get_long(1) as i32,
@@ -283,6 +284,7 @@ impl WindowSystem {
             keys::MOUSE_RESIZE => {
                 if event.subwindow != 0 {
                     println!("Resize");
+                    xlib::XRaiseWindow( self.display, event.subwindow );
                     self.on_resize_move( &event );
                 }
             },
@@ -290,6 +292,7 @@ impl WindowSystem {
             keys::MOUSE_MOVE => {
                 if event.subwindow != 0 {
                     println!("Move");
+                    xlib::XRaiseWindow( self.display, event.subwindow );
                     self.on_resize_move( &event );
                 }
             },
@@ -367,7 +370,7 @@ impl WindowSystem {
     unsafe fn get_empty_wa ( &self ) -> xlib::XWindowAttributes {
         let screen = xlib::XDefaultScreenOfDisplay( self.display );
         let visual = xlib::XDefaultVisual( self.display, xlib::XDefaultScreen( self.display ) );
-        let mut wa = xlib::XWindowAttributes {
+        xlib::XWindowAttributes {
             x: 0,
             y: 0,
             width: 0,
@@ -391,8 +394,6 @@ impl WindowSystem {
             do_not_propagate_mask: 0,
             override_redirect: 0,
             screen: screen,
-        };
-
-        wa
+        }
     }
 }
