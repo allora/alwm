@@ -5,8 +5,8 @@ ALWM is my attempt at learning Rust through a toy window manager. This project i
 Current Features:
 * Exit funcitonality through the default key binding Super+Shift+F1
 * Window borders! (Hardcoded atm)
-
-Work In Progress:
 * Window Focus
 * Window Movement
 * Window Resize
+
+Work In Progress:

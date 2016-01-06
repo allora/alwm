@@ -13,6 +13,7 @@ pub const EXIT_KEY: Key<'static> = Key{ key: "F1", modifier: MODKEY2|SHIFT };
 // Mouse commands. We add our binds here for wm actions
 pub const MOUSE_MOVE: MouseCmd = MouseCmd{ button: 1, modifier: MODKEY2 };
 pub const MOUSE_RAISE: MouseCmd = MouseCmd{ button: 1, modifier: 0 };
+pub const MOUSE_RESIZE: MouseCmd = MouseCmd{ button: 3, modifier: MODKEY2 };
 
 #[derive(PartialEq)]
 pub struct MouseCmd {
