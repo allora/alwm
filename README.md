@@ -4,6 +4,8 @@ ALWM is my attempt at learning Rust through a toy window manager. This project i
 
 ALWM is inspired by dwm and wtfwm code bases.
 
+![screen shot](alwm.png?raw=true)
+
 Current Features:
 * Exit funcitonality through the default key binding Super+Shift+F1
 * Window borders! (Hardcoded atm)

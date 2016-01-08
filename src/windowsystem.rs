@@ -2,7 +2,7 @@ use std::thread::spawn;
 use std::process::Command;
 use std::num::Wrapping;
 use std::cmp::max;
-use libc::c_ulong;
+use libc::{c_uchar,c_int, c_ulong};
 use std::ffi::CString;
 use std::ptr::{
   null,
@@ -12,6 +12,10 @@ use std::ptr::{
 use x11::xlib;
 use config;
 use config::KeyCmd;
+
+unsafe extern fn error_handler(_: *mut xlib::Display, _: *mut xlib::XErrorEvent) -> c_int {
+    return 0;
+}
 
 pub struct WindowSystem {
     display:    *mut xlib::Display,
@@ -25,6 +29,8 @@ pub struct WindowSystem {
 
 impl WindowSystem {
     pub fn new() -> WindowSystem {
+        use x11::xlib::*;
+
         unsafe {
             // Open display
             let display = xlib::XOpenDisplay(null());
@@ -36,7 +42,9 @@ impl WindowSystem {
             let screen = xlib::XDefaultScreenOfDisplay(display);
             let root = xlib::XRootWindowOfScreen(screen);
 
-            WindowSystem {
+            xlib::XSetErrorHandler(Some(error_handler));
+
+            let ws = WindowSystem {
                 display: display,
                 root: root,
                 x: 0,
@@ -44,38 +52,56 @@ impl WindowSystem {
                 w: 0,
                 h: 0,
                 button_id: 0,
-            }
+            };
+
+            let mut wa = XSetWindowAttributes {
+                background_pixmap: 0,
+                background_pixel: 0,
+                border_pixmap: 0,
+                border_pixel: 0,
+                bit_gravity: 0,
+                win_gravity: 0,
+                backing_store: 0,
+                backing_planes: 0,
+                backing_pixel: 0,
+                save_under: 0,
+                do_not_propagate_mask: 0,
+                override_redirect: 0,
+                colormap: 0,
+                cursor: 0,
+                event_mask:
+                            SubstructureRedirectMask|
+                            SubstructureNotifyMask|
+                            StructureNotifyMask|
+                            ButtonPressMask|
+                            ButtonReleaseMask|
+                            PropertyChangeMask,
+            };
+
+            // Set up window events
+            XChangeWindowAttributes( ws.display, ws.root, CWEventMask|CWCursor, &mut wa );
+            XSelectInput( ws.display, ws.root, wa.event_mask );
+            xlib::XSync( ws.display, 0 );
+            xlib::XUngrabButton(ws.display, 0, 0x8000, ws.root);
+
+            let name = (*CString::new(&b"ALWM"[..]).unwrap()).as_ptr();
+
+            let wmcheck = ws.get_atom("_NET_SUPPORTING_WM_CHECK");
+            let wmname = ws.get_atom("_NET_WM_NAME");
+            let utf8 = ws.get_atom("UTF8_STRING");
+            let xa_window = ws.get_atom("xlib::XA_WINDOW");
+
+            let mut root_cpy = ws.root;
+            let root_ptr : *mut Window = &mut root_cpy;
+            xlib::XChangeProperty(ws.display, ws.root, wmcheck, xa_window, 32, 0, root_ptr as *mut c_uchar, 1);
+            xlib::XChangeProperty(ws.display, ws.root, wmname, utf8, 8, 0, name as *mut c_uchar, 5);
+
+            ws
         }
     }
 
-    pub fn on_init( &mut self ) {
-        use x11::xlib::*;
-        let mut wa = XSetWindowAttributes {
-            background_pixmap: 0,
-            background_pixel: 0,
-            border_pixmap: 0,
-            border_pixel: 0,
-            bit_gravity: 0,
-            win_gravity: 0,
-            backing_store: 0,
-            backing_planes: 0,
-            backing_pixel: 0,
-            save_under: 0,
-            do_not_propagate_mask: 0,
-            override_redirect: 0,
-            colormap: 0,
-            cursor: 0,
-            event_mask:
-                        SubstructureRedirectMask|
-                        SubstructureNotifyMask|
-                        StructureNotifyMask|
-                        ButtonPressMask|
-                        ButtonReleaseMask|
-                        PropertyChangeMask,
-        };
-
+    pub fn grab_keys(&self) {
         unsafe {
-
             // Grab keys
             // Exit key behavior
             let kc_exit = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::EXIT_KEY ) );
@@ -87,7 +113,11 @@ impl WindowSystem {
             let kc_run = xlib::XKeysymToKeycode( self.display, KeyCmd::get_keysym( config::RUN_KEY ) );
             xlib::XGrabKey( self.display, kc_run as i32, KeyCmd::get_modifier( config::RUN_KEY ),
                 self.root as c_ulong, 1, xlib::GrabModeAsync, xlib::GrabModeAsync );
+        }
+    }
 
+    pub fn grab_buttons(&self) {
+        unsafe {
             // Grab mouse
             xlib::XGrabButton( self.display, config::MOUSE_MOVE.button, config::MOUSE_MOVE.modifier,
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
@@ -95,10 +125,15 @@ impl WindowSystem {
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
             xlib::XGrabButton( self.display, config::MOUSE_RAISE.button, config::MOUSE_RAISE.modifier,
                 self.root, 1, xlib::ButtonPressMask as u32, xlib::GrabModeAsync, xlib::GrabModeAsync, 0, 0 );
+        }
+    }
 
-            // Set up window events
-            XChangeWindowAttributes( self.display, self.root, CWEventMask|CWCursor, &mut wa );
-            XSelectInput( self.display, self.root, wa.event_mask );
+    fn get_atom(&self, s: &str) -> u64 {
+        unsafe {
+            match CString::new(s) {
+                Ok(b) => xlib::XInternAtom(self.display, b.as_ptr(), 0) as u64,
+                _     => panic!("Invalid atom! {}", s)
+            }
         }
     }
 
@@ -121,7 +156,6 @@ impl WindowSystem {
 
             xlib::ButtonPress => {
                 let event = xlib::XButtonEvent::from(ev);
-                println!("Button Pressed: {}", event.button);
                 self.on_button_press( &event );
             },
 
@@ -135,8 +169,10 @@ impl WindowSystem {
                 self.on_client_message( &event );
             },
 
+            xlib::ConfigureNotify => {
+            }
+
             xlib::DestroyNotify => {
-                println!("Got destroy notify");
             },
 
             xlib::MapRequest => {
@@ -145,7 +181,6 @@ impl WindowSystem {
             },
 
 //            xlib::CreateNotify => {
-//                println!("Got create notify");
 //            }
 
             xlib::KeyPress => {
@@ -167,8 +202,7 @@ impl WindowSystem {
     }
 
     fn on_client_message( &mut self, event: &xlib::XClientMessageEvent ) {
-        println!("Client message: {}", event.window);
-    }
+            }
 
     fn on_map_request( &mut self, event: &mut xlib::XMapRequestEvent ) {
         unsafe {
@@ -220,14 +254,12 @@ impl WindowSystem {
             // Handle key events
             match key_info {
                 EXIT_KEY => {
-                    println!( "Exiting!" );
                     return true;
                 },
                 TERM_KEY => {
                     open_term = true;
                 },
                 RUN_KEY => {
-                    println!("Run key pushed");
                     open_run = true;
                 },
 
@@ -263,7 +295,6 @@ impl WindowSystem {
         }
 
         self.button_id = event.button;
-        println!("Pointer grabbed");
         unsafe {
             xlib::XGrabPointer( self.display, event.subwindow, 1,
                 (xlib::PointerMotionMask|xlib::ButtonReleaseMask) as u32,
@@ -278,7 +309,6 @@ impl WindowSystem {
         match button_info {
             config::MOUSE_RESIZE => {
                 if event.subwindow != 0 {
-                    println!("Resize");
                     unsafe {
                         xlib::XRaiseWindow( self.display, event.subwindow );
                     }
@@ -288,7 +318,6 @@ impl WindowSystem {
 
             config::MOUSE_MOVE => {
                 if event.subwindow != 0 {
-                    println!("Move");
                     unsafe {
                         xlib::XRaiseWindow( self.display, event.subwindow );
                     }
@@ -306,12 +335,9 @@ impl WindowSystem {
 
             _ => {},
         }
-
-        println!("End button press function");
     }
 
     fn on_button_release( &mut self, event: &xlib::XButtonEvent ) {
-        println!("Ungrab pointer");
         unsafe {
             xlib::XUngrabPointer( self.display, event.time );
         }
@@ -347,8 +373,6 @@ impl WindowSystem {
             let new_w = max(1, new_w.0);
             let new_h = max(1, new_h.0);
 
-            println!("Coord Diffs: {}, {}", xdiff.0, ydiff.0);
-            println!("Coords: {}, {}", new_w, new_h );
             xlib::XResizeWindow( self.display, event.window, new_w, new_h );
         }
     }
@@ -369,7 +393,6 @@ impl WindowSystem {
             let new_x = wa.x + xdiff;
             let new_y = wa.y + ydiff;
 
-            println!("Coords: {}, {}", new_x, new_y );
             xlib::XMoveWindow( self.display, event.window, new_x, new_y );
         }
     }
