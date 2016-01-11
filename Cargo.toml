@@ -4,8 +4,8 @@ version = "0.1.0"
 authors = ["Allie <alliekat251@gmail.com>"]
 
 [dependencies]
-libc = "*"
-x11 = {version = "*", features = [ "xlib", "xinerama" ] }
+libc = "0.2"
+x11 = {version = "2.3.0", features = [ "xlib", "xinerama" ] }
 
 [[bin]]
 name = "alwm"

@@ -9,8 +9,8 @@ use windowsystem::WindowSystem;
 #[allow(while_true)]
 fn main() {
     let mut window_system = WindowSystem::new();
-
-    window_system.on_init();
+    window_system.grab_keys();
+    window_system.grab_buttons();
 
     let mut exit_event = false;
     while !exit_event {

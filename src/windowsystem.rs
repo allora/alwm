@@ -25,11 +25,15 @@ pub struct WindowSystem {
     w:          u32,
     h:          u32,
     button_id:  u32,
+    borderinfo: config::BorderInfo,
+    focuswin:   xlib::Window,
 }
 
 impl WindowSystem {
     pub fn new() -> WindowSystem {
         use x11::xlib::*;
+
+        let borderinfo = config::BorderInfo::new( config::FOCUS_BORDERS, config::UNFOCUSED_BORDERS );
 
         unsafe {
             // Open display
@@ -52,6 +56,8 @@ impl WindowSystem {
                 w: 0,
                 h: 0,
                 button_id: 0,
+                borderinfo: borderinfo,
+                focuswin: root,
             };
 
             let mut wa = XSetWindowAttributes {
@@ -164,16 +170,35 @@ impl WindowSystem {
                 self.on_button_release( &event );
             },
 
-            xlib::ClientMessage => {
-                let event = xlib::XClientMessageEvent::from(ev);
-                self.on_client_message( &event );
-            },
+//            xlib::ClientMessage => {
+//                let event = xlib::XClientMessageEvent::from(ev);
+//                self.on_client_message( &event );
+//            },
 
             xlib::ConfigureNotify => {
+                let event = xlib::XConfigureEvent::from(ev);
+
+                unsafe {
+                    xlib::XClearWindow( self.display, self.root );
+                }
+
+                if event.window != self.root {
+                    if event.window == self.focuswin {
+                        self.draw_borders( true, event.window );
+                    }
+                    else {
+                        self.draw_borders( false, event.window );
+                    }
+                }
             }
 
             xlib::DestroyNotify => {
             },
+
+            xlib::EnterNotify => {
+                let event = xlib::XEnterWindowEvent::from(ev);
+                self.on_enter_notify( &event );
+            }
 
             xlib::MapRequest => {
                 let mut event = xlib::XMapRequestEvent::from(ev);
@@ -201,8 +226,141 @@ impl WindowSystem {
         }
     }
 
-    fn on_client_message( &mut self, event: &xlib::XClientMessageEvent ) {
+    fn focus( &mut self, window: xlib::Window, time: c_ulong ) {
+        if self.focuswin != window {
+            unsafe{
+                xlib::XSetInputFocus( self.display, window, xlib::RevertToParent, time );
+                if !config::SLOPPYFOCUS {
+                    xlib::XRaiseWindow( self.display, window );
+                }
             }
+        }
+        self.draw_borders( true, window );
+        self.focuswin = window;
+    }
+
+    fn draw_borders( &mut self, isfocused: bool, window: xlib::Window ) {
+        if self.root as u64 == window as u64 { return; }
+        let mut borders = config::UNFOCUSED_BORDERS;
+        let mut count = config::NUM_UNFOCUSED_BORDERS;
+        let mut size = self.borderinfo.get_unfocus_size();
+        if isfocused {
+            borders = config::FOCUS_BORDERS;
+            count = config::NUM_FOCUSED_BORDERS;
+            size = self.borderinfo.get_focus_size();
+        }
+
+        unsafe {
+//            let mut wc = xlib::XWindowChanges {
+//                x: 0,
+//                y: 0,
+//                width: 0,
+//                height: 0,
+//                border_width: size * 2,
+//                sibling: 0,
+//                stack_mode: 0,
+//            };
+//
+//            xlib::XConfigureWindow( self.display, window, xlib::CWBorderWidth as u32, &mut wc );
+
+            let mut gcv = xlib::XGCValues {
+                function: 0,
+                plane_mask: 0,
+                foreground: 0,
+                background: 0,
+                line_width: 0,
+                line_style: 0,
+                cap_style: 0,
+                join_style: 0,
+                fill_style: 0,
+                fill_rule: 0,
+                arc_mode: 0,
+                tile: 0,
+                stipple: 0,
+                ts_x_origin: 0,
+                ts_y_origin: 0,
+                font: 0,
+                subwindow_mode: 0,
+                graphics_exposures: 0,
+                clip_x_origin: 0,
+                clip_y_origin: 0,
+                clip_mask: 0,
+                dash_offset: 0,
+                dashes: 0,
+            };
+            let mut wa = self.get_empty_wa();
+            xlib::XGetWindowAttributes( self.display, window, &mut wa );
+
+            let cmap = xlib::XDefaultColormap( self.display, 0 );
+            let pixmap = xlib::XCreatePixmap( self.display, self.root,
+                                              (wa.x - size) as u32, (wa.y - size) as u32, wa.depth as u32 );
+
+            for i in 0 .. count {
+
+                let new_x = wa.x - size;
+                let new_y = wa.y - size;
+                let new_w = wa.width + ( 2 * size );
+                let new_h = wa.height + ( 2 * size );
+
+
+                let mut color = xlib::XColor {
+                    pixel: 0,
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    flags: 0,
+                    pad: 0,
+                };
+
+                let gc = xlib::XCreateGC( self.display, pixmap, 0, &mut gcv );
+                let color_string = CString::new( borders[i].color).unwrap().into_raw();
+
+                xlib::XParseColor( self.display, cmap, color_string, &mut color);
+                xlib::XAllocColor( self.display, cmap, &mut color );
+
+                let _ = CString::from_raw(color_string);
+
+                xlib::XSetForeground( self.display, gc, color.pixel );
+                xlib::XFillRectangle( self.display, pixmap, gc, new_x, new_y, new_w as u32, new_h as u32 );
+                xlib::XSync( self.display, 0 );
+
+                xlib::XFreeGC( self.display, gc );
+                size = size - borders[i].size;
+            }
+
+            let mut s_wa = xlib::XSetWindowAttributes {
+                background_pixmap: 0,
+                background_pixel: 0,
+                border_pixmap: pixmap,
+                border_pixel: 0,
+                bit_gravity: 0,
+                win_gravity: 0,
+                backing_store: 0,
+                backing_planes: 0,
+                backing_pixel: 0,
+                save_under: 0,
+                event_mask: 0,
+                do_not_propagate_mask: 0,
+                override_redirect: 0,
+                colormap: 0,
+                cursor: 0,
+            };
+
+            xlib::XChangeWindowAttributes( self.display, window,
+                        xlib::CWBorderPixmap, &mut s_wa );
+            xlib::XSync( self.display, 0 );
+
+            xlib::XFreePixmap( self.display, pixmap );
+            xlib::XFreeColormap( self.display, cmap );
+            self.flush();
+        }
+    }
+
+    fn on_enter_notify( &mut self, event: &xlib::XEnterWindowEvent ) {
+        if config::SLOPPYFOCUS {
+            self.focus( event.window, event.time );
+        }
+    }
 
     fn on_map_request( &mut self, event: &mut xlib::XMapRequestEvent ) {
         unsafe {
@@ -221,7 +379,7 @@ impl WindowSystem {
                 y: wa.y,
                 width: wa.width,
                 height: wa.height,
-                border_width: 10,
+                border_width: 0,
                 sibling: 0,
                 stack_mode: 0,
             };
@@ -234,8 +392,11 @@ impl WindowSystem {
                         xlib::FocusChangeMask|
                         xlib::PropertyChangeMask|
                         xlib::StructureNotifyMask );
+
+            self.draw_borders( false, event.window );
             xlib::XMapWindow( self.display, event.window );
         }
+
     }
 
     fn on_keypress( &mut self, event: &xlib::XKeyEvent ) -> bool {
@@ -309,27 +470,21 @@ impl WindowSystem {
         match button_info {
             config::MOUSE_RESIZE => {
                 if event.subwindow != 0 {
-                    unsafe {
-                        xlib::XRaiseWindow( self.display, event.subwindow );
-                    }
+                    self.focus( event.subwindow, event.time );
                     self.on_resize_move( &event );
                 }
             },
 
             config::MOUSE_MOVE => {
                 if event.subwindow != 0 {
-                    unsafe {
-                        xlib::XRaiseWindow( self.display, event.subwindow );
-                    }
+                    self.focus( event.subwindow, event.time );
                     self.on_resize_move( &event );
                 }
             },
 
             config::MOUSE_RAISE => {
                 if event.subwindow != 0 {
-                    unsafe {
-                        xlib::XRaiseWindow( self.display, event.subwindow );
-                    }
+                    self.focus( event.subwindow, event.time );
                 }
             },
 
